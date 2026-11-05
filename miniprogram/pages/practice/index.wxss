@@ -1,0 +1,1 @@
+.practice-stem{margin-top:28rpx}.practice-option{display:flex;align-items:flex-start;gap:12rpx;padding:20rpx 0;border-bottom:1rpx solid #edf0e9;font-size:27rpx;line-height:1.9}.practice-option radio{transform:scale(.8);margin-top:4rpx}.practice-source{padding:20rpx;border-left:4rpx solid #a3bb84;background:#f5f7ee;font-size:25rpx;line-height:1.9;margin:20rpx 0}

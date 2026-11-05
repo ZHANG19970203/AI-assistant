@@ -1,0 +1,16 @@
+<view class="student-screen">
+  <view class="screen-title">用自己的话记一句</view>
+  <view class="screen-intro">保留你的理解、观察与修正。笔记属于候选学习证据，只有教师按标准评阅后才可能形成维度评分。</view>
+  <view class="screen-notice">离线进程内保存 · 重启重置 · 没有上传教师或云端</view>
+  <view wx:if="error" class="student-error">{{error}}</view>
+  <view class="student-card">
+    <view class="student-label">标题</view><input value="{{title}}" bindinput="updateTitle" maxlength="100" placeholder="例如：我怎样区分观察与解释" />
+    <view class="student-label">我的理解、卡点或下一步</view><textarea class="note-content" value="{{content}}" bindinput="updateContent" maxlength="3000" placeholder="先写自己的话；不确定也可以保留。" />
+    <button class="secondary" bindtap="insertReflectionFrame" disabled="{{busy || content}}">使用反思框架</button>
+    <view class="student-label">资料位置（选填）</view><input value="{{sourceRef}}" bindinput="updateSource" maxlength="300" placeholder="资料名称、页码或章节；尚未核实请注明。" />
+    <button bindtap="save" disabled="{{busy}}" loading="{{busy}}">保存我的笔记</button>
+  </view>
+  <view class="student-card-title">已记下的内容</view>
+  <view wx:for="{{notes}}" wx:key="id" class="student-card"><view class="student-card-title">{{item.title}}</view><text class="student-preline" selectable="true">{{item.content}}</text><view wx:if="item.sourceRef" class="muted">资料位置（学生记录，待核对）：{{item.sourceRef}}</view></view>
+  <view wx:if="!notes.length" class="student-empty">还没有笔记。可以先写一句“我现在最不确定的是……”。</view>
+</view>

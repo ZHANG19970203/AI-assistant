@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.runtime/
+runtime/
+data/*
+!data/seed.json
+!data/practice-seed.json
+!data/course-outline.json
+!data/import-candidates.json
+*.sqlite*
+*.db
+*.log
+__pycache__/
+*.pyc

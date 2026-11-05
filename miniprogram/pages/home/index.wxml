@@ -1,0 +1,60 @@
+<view class="page">
+  <view class="eyebrow">KINESIOLOGY · LEARNING COMPANION</view>
+  <view class="hero-title">{{course.title}}</view>
+  <view class="subtitle">先尝试，再找依据，逐步独立解释。</view>
+  <view class="notice">{{transportNote}} · 无真实微信登录/推送</view>
+  <view wx:if="error" class="error" role="alert">{{error}}</view>
+  <button class="secondary" bindtap="refresh" disabled="{{busy}}" loading="{{busy}}">刷新课程</button>
+
+  <view wx:if="loaded">
+    <view class="section-head">今日学习路径</view>
+    <view class="muted">{{course.module}} · 已完成 {{progress.completed}} / {{progress.total}} 个任务</view>
+    <view wx:for="{{tasks}}" wx:key="id" class="card">
+      <view class="row"><text class="badge">{{item.phaseLabel}}</text><text class="muted">{{item.status === 'completed' ? '已完成' : '待完成'}}</text></view>
+      <view class="card-title">{{item.title}}</view>
+      <view class="body">{{item.description}}</view>
+      <view class="muted">{{item.dueLabel}}</view>
+      <button wx:if="item.status !== 'completed'" class="secondary" bindtap="selectTask" data-id="{{item.id}}" data-title="{{item.title}}" disabled="{{busy}}">记录完成与反思</button>
+      <view wx:else class="body">我的反思：{{item.reflection || '已完成记录'}}</view>
+    </view>
+
+    <view wx:if="selectedTaskId" class="card completion">
+      <view class="card-title">{{selectedTaskTitle}}</view>
+      <view class="label">你发现了什么？还有哪里不确定？</view>
+      <textarea value="{{reflection}}" bindinput="updateReflection" maxlength="1000" placeholder="用自己的话写一句。" />
+      <view class="label">自评信心（不是系统掌握度评分）</view>
+      <picker range="{{confidenceLabels}}" value="{{confidenceIndex}}" bindchange="updateConfidence"><view class="picker">{{confidenceLabels[confidenceIndex]}} ▾</view></picker>
+      <button bindtap="complete" disabled="{{busy}}">保存反思</button>
+      <button class="secondary" bindtap="cancelCompletion" disabled="{{busy}}">稍后记录</button>
+    </view>
+
+    <view class="section-head">带着自己的想法提问</view>
+    <view class="card">
+      <view class="label">你的问题</view>
+      <textarea value="{{question}}" bindinput="updateQuestion" maxlength="1000" placeholder="例如：运动分析应该先记录什么？" />
+      <view class="label">你已经怎样理解或尝试？（选填）</view>
+      <textarea value="{{attempt}}" bindinput="updateAttempt" maxlength="1000" placeholder="先说说你的判断，再一起对照资料。" />
+      <button bindtap="ask" disabled="{{busy || !question}}" loading="{{busy}}">查找资料依据</button>
+      <view class="muted">当前仅匹配原创演示摘录，未导入正式课程、未连接大模型。证据不足时需教师继续解答。</view>
+    </view>
+    <view wx:if="reply" class="card reply">
+      <view class="card-title">资料中的线索</view>
+      <text class="answer" selectable="true">{{reply.answer}}</text>
+      <view wx:for="{{reply.citations}}" wx:key="documentId" class="citation">
+        <view class="label">{{item.title}} · {{item.section}} · {{item.version}}</view>
+        <text selectable="true">{{item.excerpt}}</text>
+      </view>
+      <view wx:if="reply.followUp" class="followup">下一步：{{reply.followUp}}</view>
+      <view wx:if="reply.needsTeacher" class="muted">该问题需要教师进一步核对，请在教师反馈前保留疑问。</view>
+    </view>
+
+    <view class="section-head">学习节奏由你决定</view>
+    <view class="card">
+      <view class="row"><text>提醒偏好演示</text><switch checked="{{settings.reminders}}" bindchange="toggleReminders" disabled="{{busy}}" color="#176a59" /></view>
+      <view class="muted">安静时段 {{settings.quietStart}}–{{settings.quietEnd}}（北京时间）；默认离线模式不会生成发件箱或发送任何提醒。</view>
+      <button class="secondary" bindtap="requestWechatSubscription">了解微信订阅状态</button>
+      <view class="muted">{{subscriptionNote}}</view>
+    </view>
+  </view>
+  <view class="footer">学习伴侣提供资料与思路支持；课程内容与操作要求以教师指导为准。</view>
+</view>

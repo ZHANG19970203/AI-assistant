@@ -1,0 +1,21 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {createService} from '../lib/service.mjs';import {createApp} from '../server.mjs';
+async function setup(t,transcribe){let clock=new Date('2026-11-05T00:00:00Z');const service=createService({now:()=>clock}),chapter=service.bootstrap('teacher').chapters[0];const plan=service.lessonFlow.save('teacher',{title:'语音测试',chapterId:chapter.id,stages:{pre:{thinking:'作答'},post:{requirements:'之后',releaseAt:'2099-01-01T00:00:00Z'}}}).id;const token=service.lessonFlow.assign('teacher',{planId:plan,preview:true}).links[0].url.split('token=')[1];const app=createApp({service,voiceTranscribe:transcribe});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));t.after(()=>app.close());const base=`http://127.0.0.1:${app.server.address().port}`;
+ const send=(path='/api/voice/transcribe',headers={},bytes=Buffer.from('fixture'))=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/octet-stream','x-audio-mime':'audio/webm','x-voice-consent':'yes',...headers},body:bytes});return {service,token,send,expire:()=>clock=new Date(+clock+8*86400000)};}
+test('voice accepts teacher and scoped student input without saving recordings or submitting tasks',async t=>{let calls=0;const {service,token,send,expire}=await setup(t,async()=>{calls++;return '观察动作方向。';});
+ assert.equal((await send()).status,403);assert.equal(calls,0);assert.equal((await send(undefined,{'x-demo-role':'teacher','x-voice-consent':'no'})).status,400);
+ const teacher=await send(undefined,{'x-demo-role':'teacher'});assert.equal((await teacher.json()).text,'观察动作方向。');
+ assert.equal((await send('/api/study/voice/transcribe?phase=pre',{'x-study-token':'bad'})).status,401);
+ assert.equal((await send('/api/study/voice/transcribe?phase=post',{'x-study-token':token})).status,403);
+ assert.equal((await send('/api/study/voice/transcribe?phase=pre',{'x-study-token':token})).status,200);
+ for(const table of ['study_recordings','lesson_submissions','lesson_chats'])assert.equal(service.db.prepare('SELECT COUNT(*) n FROM '+table).get().n,0);
+ expire();assert.equal((await send('/api/study/voice/transcribe?phase=pre',{'x-study-token':token,'x-study-mode':'review'})).status,403);assert.equal(calls,2);
+});
+test('voice rejects unsupported/empty/large uploads and hides provider error details',async t=>{let fail=true,calls=0;const {send}=await setup(t,async()=>{calls++;if(fail)throw new Error('private-provider-detail');return '';});const teacher={'x-demo-role':'teacher'};
+ assert.equal((await send(undefined,{...teacher,'x-audio-mime':'text/plain'})).status,415);assert.equal((await send(undefined,teacher,Buffer.alloc(0))).status,400);assert.equal((await send(undefined,teacher,Buffer.alloc(8*1024*1024+1))).status,413);assert.equal(calls,0);
+ const error=await send(undefined,teacher);assert.equal(error.status,502);assert.doesNotMatch(await error.text(),/private-provider-detail/);fail=false;assert.equal((await send(undefined,teacher)).status,422);
+});
+test('parallel voice requests are limited and access expiry is rechecked after recognition',async t=>{let release,started;const begun=new Promise(r=>started=r);const {send,token,expire}=await setup(t,()=>{started();return new Promise(r=>release=r);});
+ const first=send('/api/study/voice/transcribe?phase=pre',{'x-study-token':token});await begun;
+ assert.equal((await send('/api/study/voice/transcribe?phase=pre',{'x-study-token':token})).status,429);expire();release('不应返回的过期文字');const response=await first;assert.equal(response.status,403);assert.doesNotMatch(await response.text(),/不应返回/);
+});

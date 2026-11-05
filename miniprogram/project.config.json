@@ -1,0 +1,13 @@
+{
+  "description": "人体运动学学习伴侣：仅本地开发骨架，未接入真实微信身份和推送",
+  "projectname": "kinesiology-companion-local",
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "setting": {
+    "es6": true,
+    "minified": false,
+    "urlCheck": true,
+    "postcss": true
+  }
+}

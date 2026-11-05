@@ -1,0 +1,20 @@
+{
+  "pages": ["pages/home/index", "pages/practice/index", "pages/notes/index", "pages/evidence/index"],
+  "window": {
+    "navigationBarTitleText": "人体运动学 · 学习伴侣",
+    "navigationBarBackgroundColor": "#f7f7f1",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f7f7f1"
+  },
+  "tabBar": {
+    "color": "#6f7c71", "selectedColor": "#176a59", "backgroundColor": "#f7f7f1",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "学习路径" },
+      { "pagePath": "pages/practice/index", "text": "学练" },
+      { "pagePath": "pages/notes/index", "text": "笔记" },
+      { "pagePath": "pages/evidence/index", "text": "证据反馈" }
+    ]
+  },
+  "networkTimeout": { "request": 15000 },
+  "style": "v2"
+}

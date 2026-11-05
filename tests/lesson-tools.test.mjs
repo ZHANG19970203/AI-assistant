@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createService} from '../lib/service.mjs';
+import {createApp} from '../server.mjs';
+const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1cAAAAASUVORK5CYII=','base64');
+const q={prompt:'测试题一',options:['甲','乙','丙','丁'],correct:0,explanation:'接口测试'};
+test('upgrade restores latest existing questions once, without resurrecting deleted drafts',()=>{
+  const folder=mkdtempSync(join(tmpdir(),'kin-question-upgrade-')),dbPath=join(folder,'test.sqlite');let s=createService({dbPath});
+  try{const chapterId=s.addChapter('teacher',{title:'原有题目',publishNow:true}).chapter.id;
+    s.lessonFlow.save('teacher',{title:'旧安排',chapterId,stages:{pre:{questions:[q]}}});
+    s.db.prepare('DELETE FROM lesson_tools_migrations').run();s.close();s=createService({dbPath});
+    const rows=s.lessonFlow.tools.questions('teacher');assert.equal(rows.length,1);assert.equal(rows[0].prompt,q.prompt);
+    s.lessonFlow.tools.question('teacher',{chapterId,phase:'pre',id:rows[0].id,action:'delete'});s.close();s=createService({dbPath});
+    assert.equal(s.lessonFlow.tools.questions('teacher').length,0);assert.equal(s.lessonFlow.report('teacher').plans[0].stages.pre.questions.length,1);
+  }finally{s.close();rmSync(folder,{recursive:true,force:true});}
+});
+test('saved question CRUD survives restart and does not change assigned questions',()=>{
+  const folder=mkdtempSync(join(tmpdir(),'kin-questions-')),dbPath=join(folder,'test.sqlite');let s=createService({dbPath});
+  try{const chapterId=s.addChapter('teacher',{title:'题目测试',publishNow:true}).chapter.id;
+    const first=s.lessonFlow.tools.question('teacher',{chapterId,phase:'pre',question:q});
+    s.lessonFlow.tools.question('teacher',{chapterId,phase:'pre',question:{...q,prompt:'测试题二'}});
+    assert.throws(()=>s.lessonFlow.tools.question('student',{chapterId,phase:'pre',question:q}),/教师/);
+    const plan=s.lessonFlow.save('teacher',{title:'保存快照',chapterId,stages:{pre:{questions:s.lessonFlow.tools.questions('teacher')}}});
+    const token=s.lessonFlow.assign('teacher',{planId:plan.id,preview:true}).links[0].url.split('token=')[1];
+    s.lessonFlow.tools.question('teacher',{chapterId,phase:'pre',id:first.id,question:{...q,prompt:'修改后的题'}});
+    assert.equal(s.lessonFlow.view(token).stages[0].questions[0].prompt,q.prompt);
+    s.close();s=createService({dbPath});assert.equal(s.lessonFlow.tools.questions('teacher').length,2);assert.equal(s.lessonFlow.tools.questions('teacher')[0].prompt,'修改后的题');
+    s.lessonFlow.tools.question('teacher',{chapterId,phase:'pre',id:first.id,action:'delete'});
+    assert.equal(s.lessonFlow.tools.questions('teacher').length,1);assert.equal(s.lessonFlow.view(token).stages[0].questions.length,2);
+    assert.throws(()=>s.lessonFlow.tools.question('teacher',{chapterId,phase:'pre',question:{...q,options:['']}}),/4个/);
+  }finally{s.close();rmSync(folder,{recursive:true,force:true});}
+});
+test('feedback and image HTTP routes isolate students, enforce stage access, persist image submissions and replies',async t=>{
+  let time=new Date('2026-11-05T00:00:00Z');const s=createService({now:()=>time});t.after(()=>s.close());const chapterId=s.addChapter('teacher',{title:'反馈测试',publishNow:true}).chapter.id;
+  const template=s.lessonFlow.tools.imageUpload('teacher',null,{chapterId,phase:'pre'},png);
+  const make=()=>{const plan=s.lessonFlow.save('teacher',{title:'反馈任务',chapterId,stages:{pre:{mindmap:true,mindmapImageId:template.id},post:{mindmap:true,releaseAt:'2099-01-01T00:00:00Z'}}});return s.lessonFlow.assign('teacher',{planId:plan.id,preview:true}).links[0].url.split('token=')[1];};
+  const token=make(),other=make(),app=createApp({service:s});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>app.server.close(r)));const base=`http://127.0.0.1:${app.server.address().port}`;
+  const request=(path,{method='GET',headers={},body}={})=>fetch(base+path,{method,headers,body});
+  const student={'x-study-token':token,'Content-Type':'application/json'},teacher={'x-demo-role':'teacher','Content-Type':'application/json'};
+  assert.equal((await request('/api/study/feedback')).status,401);
+  const msg=await request('/api/study/feedback',{method:'POST',headers:student,body:JSON.stringify({phase:'pre',content:'这一步没有看懂'})});assert.equal(msg.status,201);const message=await msg.json();
+  assert.equal(s.lessonFlow.tools.messages(other).length,0);assert.equal(s.lessonFlow.report('teacher').messages[0].content,'这一步没有看懂');
+  assert.equal((await request('/api/lesson-flow/feedback/reply',{method:'POST',headers:student,body:JSON.stringify({id:message.id,content:'冒充教师'})})).status,403);
+  assert.equal((await request('/api/lesson-flow/feedback/reply',{method:'POST',headers:teacher,body:JSON.stringify({id:message.id,content:'先回看第一段'})})).status,200);
+  assert.equal(s.lessonFlow.tools.messages(token)[0].reply,'先回看第一段');
+  const upload=await request('/api/study/images?phase=pre',{method:'POST',headers:{'x-study-token':token,'Content-Type':'application/octet-stream'},body:png});assert.equal(upload.status,201);const image=await upload.json();
+  assert.equal(s.lessonFlow.report('teacher').students.find(x=>s.db.prepare('SELECT token FROM lesson_access WHERE id=?').get(x.id).token===token).submissions[0].content,'image:'+image.id);
+  assert.equal((await request('/api/study/images/'+image.id+'?phase=pre',{headers:student})).status,200);
+  assert.equal((await request('/api/study/images/'+image.id+'?phase=pre',{headers:{'x-study-token':other}})).status,403);
+  assert.equal((await request('/api/lesson-flow/images/'+image.id)).status,403);
+  assert.equal((await request('/api/lesson-flow/images/'+image.id,{headers:teacher})).status,200);
+  assert.equal((await request('/api/study/images/'+template.id+'?phase=pre',{headers:student})).status,200);
+  assert.throws(()=>s.lessonFlow.tools.imageUpload('teacher',null,{chapterId,phase:'pre'},Buffer.from('<svg></svg>')),/PNG/);
+  assert.throws(()=>s.lessonFlow.tools.imageUpload('student',token,{phase:'post'},png),/尚未开放/);
+  const before=s.lessonFlow.view(token).feedback.dimensions;time=new Date('2026-11-13T00:00:00Z');
+  assert.throws(()=>s.lessonFlow.tools.image('student',token,image.id,'pre'),/7天|补学|结束|过期/);
+  s.lessonFlow.tools.feedback(token,{phase:'pre',content:'申请协助'});assert.deepEqual(s.lessonFlow.view(token).feedback.dimensions,before);
+});

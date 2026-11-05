@@ -1,0 +1,12 @@
+<view class="student-screen">
+  <view class="screen-title">六维反馈，看得见依据</view>
+  <view class="screen-intro">每一维由教师依据实际作品和公开标准评分。证据不足保持空缺，不代表0分，也不代表学不会。</view>
+  <view class="screen-notice">离线原型 · 全部维度初始 null · 无教师评分，未做能力诊断</view>
+  <view wx:if="error" class="student-error">{{error}}</view>
+  <view class="student-card"><canvas canvas-id="evidenceRadar" class="evidence-radar" /><view class="muted">底图仅说明六个方向；没有证据评分时不画成绩面。点击、停留时长、自评和练习正确率都不能自动填图。</view></view>
+  <view class="student-card"><view wx:for="{{dimensions}}" wx:key="id" class="dimension-row"><text>{{item.label}}</text><text class="muted">{{item.score === null ? '待证据 / 待教师评阅' : '仅展示经核验的教师评分'}}</text></view></view>
+  <view class="student-card-title">我留下的候选证据</view>
+  <view wx:for="{{evidence}}" wx:key="id" class="student-card"><view class="student-card-title">{{item.title}}</view><view class="muted">学生作品记录 · 待教师审核 · 尚无分值</view></view>
+  <view wx:if="!evidence.length" class="student-empty">尚无候选证据。你可以完成一个任务并写反思、保留一次练习理由，或保存自己的笔记。</view>
+  <view class="student-card"><view class="student-card-title">下一步由你选择</view><view>补一条有依据的解释；换一个日常动作观察；把不确定的问题留给教师；或者按计划休息。</view><view class="muted">当前不会自动评阅或联系教师。正式评分应可查看作品、教师、量规版本、时间和理由，并支持更正。</view></view>
+</view>

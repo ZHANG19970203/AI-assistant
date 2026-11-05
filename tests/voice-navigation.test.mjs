@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {resolveNavigation} from '../web/voice-navigation.js';import {createService} from '../lib/service.mjs';import {createApp} from '../server.mjs';
+test('voice navigation resolves pages and unique tasks without destructive actions',()=>{
+ assert.equal(resolveNavigation('去课前任务','teacher').phase,'pre');assert.equal(resolveNavigation('查看学情反馈','student').view,'feedback');assert.equal(resolveNavigation('打开温故学习','student').view,'review');assert.equal(resolveNavigation('打开补学','student').view,'makeup');
+ const data={plans:[{id:'a',title:'第一课预习',chapter_id:'c'},{id:'b',title:'第一课复习',chapter_id:'c'}]};assert.equal(resolveNavigation('打开第一课预习','teacher',data).id,'a');assert.match(resolveNavigation('打开第一课','teacher',data).error,/多个/);assert.ok(resolveNavigation('发送邮件','teacher').error);
+});
+test('expired learner can navigate by voice but cannot bypass learning access',async()=>{
+ let now=new Date();const service=createService({now:()=>now}),chapter=service.bootstrap('teacher').chapters[0],plan=service.lessonFlow.save('teacher',{title:'任务',chapterId:chapter.id,stages:{pre:{thinking:'问题'}}}).id,token=service.lessonFlow.assign('teacher',{planId:plan,preview:true}).links[0].url.split('token=')[1];now=new Date(+now+8*86400000);
+ const app=createApp({service,voiceTranscribe:async()=>'打开补学'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${app.server.address().port}`;const send=(path,value=token)=>fetch(base+path,{method:'POST',headers:{'x-study-token':value,'x-voice-consent':'yes','x-audio-mime':'audio/webm','Content-Type':'application/octet-stream'},body:'fixture'});
+ try{assert.equal((await send('/api/study/voice/navigate')).status,200);assert.equal((await send('/api/study/voice/navigate','invalid')).status,401);assert.equal((await send('/api/study/voice/transcribe?phase=pre')).status,403);assert.equal(service.lessonFlow.view(token).stages[0].open,false);}finally{await app.close();}
+});

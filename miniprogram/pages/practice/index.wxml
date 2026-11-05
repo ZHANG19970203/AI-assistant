@@ -1,0 +1,32 @@
+<view class="student-screen">
+  <view class="screen-title">先试一试，再取线索</view>
+  <view class="screen-intro">选择适合自己的练习，留下理由。卡住时一步步取提示，也可以暂停并问教师。</view>
+  <view class="screen-notice">原创离线演示 · 非正式题库 · 状态在进程结束后重置</view>
+  <view wx:if="error" class="student-error">{{error}}</view>
+  <view class="student-card">
+    <view class="student-card-title">我主动说说卡在哪里</view>
+    <picker range="{{difficulties}}" range-key="label" value="{{difficultyIndex}}" bindchange="selectDifficulty"><view class="student-picker">{{difficulties[difficultyIndex].label}} ▾</view></picker>
+    <view class="student-label">补一句话（选填）</view><input value="{{checkinMessage}}" bindinput="updateCheckin" maxlength="500" placeholder="例如：我分不清现象和解释。" />
+    <button class="secondary" bindtap="askForOneStep" disabled="{{busy}}">给我一个可选择的小步骤</button>
+    <view wx:if="checkinAdvice" class="student-feedback">{{checkinAdvice}}</view>
+    <view class="muted">仅在你主动点击后提供演示建议。不会监测停留时长来判断你是否理解，也可以暂停帮助、独立完成。</view>
+  </view>
+  <view wx:if="active" class="student-card">
+    <picker range="{{practices}}" range-key="title" value="{{selectedIndex}}" bindchange="selectPractice"><view class="student-picker">{{active.title}} ▾</view></picker>
+    <view class="student-card-title practice-stem">{{active.stem}}</view>
+    <radio-group bindchange="selectChoice">
+      <label wx:for="{{active.options}}" wx:key="id" class="practice-option"><radio value="{{item.id}}" checked="{{choice === item.id}}" color="#176a59" /><text>{{item.id}}. {{item.text}}</text></label>
+    </radio-group>
+    <view class="student-label">我这样判断的理由</view>
+    <textarea value="{{reasoning}}" bindinput="updateReasoning" maxlength="1000" placeholder="先用自己的话说一句，不需要写标准答案。" />
+    <button bindtap="submit" disabled="{{busy}}" loading="{{busy}}">提交这次尝试</button>
+    <view wx:if="feedback" class="student-feedback">{{feedback}}</view>
+    <button class="secondary" bindtap="nextHint" disabled="{{busy || hintLevel >= 3}}">{{hintLevel === 0 ? '我需要一级线索' : hintLevel &lt; 3 ? '再看一级提示' : '已到核对线索，请重试或问教师'}}</button>
+    <view wx:if="hintText" class="student-feedback">第 {{hintLevel}} 级：{{hintText}}</view>
+    <view wx:for="{{evidence}}" wx:key="documentId" class="practice-source"><view class="student-label">{{item.title}} · {{item.section}} · {{item.version}}</view><text class="student-preline" selectable="true">{{item.excerpt}}</text></view>
+    <button class="secondary" bindtap="writeReflection">记下这次修正</button>
+    <view class="muted">{{active.sourceLabel}}。这里提供检查线索，不直接公布未完成练习的选项答案。</view>
+  </view>
+  <view wx:else class="student-empty">当前没有可用练习，请先查看课程任务。</view>
+  <view class="student-card"><view class="student-card-title">练习记录单独看</view><view>累计 {{attemptTotal}} 次作答，{{correctTotal}} 次符合演示判据。</view><view wx:if="correctRate !== null">本页演示正确率 {{correctRate}}%（包括重试）。</view><view wx:else>尚无练习作答。</view><view class="muted">这里只说明这些题目的作答情况，不代表能力诊断；不会填入六维反馈图。</view></view>
+</view>

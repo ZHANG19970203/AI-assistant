@@ -1,0 +1,1 @@
+.evidence-radar{width:300px;height:290px;margin:0 auto;max-width:100%}.dimension-row{display:flex;align-items:center;justify-content:space-between;gap:18rpx;padding:18rpx 0;border-bottom:1rpx solid #edf1e7;font-size:26rpx}.dimension-row:last-child{border-bottom:0}

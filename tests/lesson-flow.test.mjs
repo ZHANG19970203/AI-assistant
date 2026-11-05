@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {createService} from '../lib/service.mjs';
+import {createApp} from '../server.mjs';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,dirname} from 'node:path';
+const stages={pre:{requirements:'观察屈曲动作',questions:[{prompt:'演示题：哪个是观察描述？',options:['观察','猜测','跳过','忽略'],correct:0,explanation:'这是接口验证用的虚构题。'}]},in:{requirements:'课堂材料应保密到开放',releaseAt:'2099-01-01T00:00:00Z'},post:{requirements:'回顾解释'}};
+function setup(t){const s=createService();t.after(()=>s.close());const c=s.addChapter('teacher',{title:'测试章节',publishNow:true}).chapter;const id=s.lessonFlow.save('teacher',{title:'本次课',chapterId:c.id,stages}).id;const token=s.lessonFlow.assign('teacher',{planId:id,preview:true}).links[0].url.split('token=')[1];return {s,id,token,c};}
+test('student sees only assigned phases; answers and locked content never leak',t=>{const {s,token}=setup(t),view=s.lessonFlow.view(token);assert.ok(!('chapters' in view));assert.equal(view.stages[1].open,false);assert.ok(!('requirements' in view.stages[1]));assert.ok(!('correct' in view.stages[0].questions[0]));assert.throws(()=>s.lessonFlow.view('bad'),/学习链接|老师/);assert.throws(()=>s.lessonFlow.answer(token,{phase:'in',questionId:'x',choice:0}),/尚未开放/);assert.throws(()=>s.lessonFlow.save('student',{}),/教师/);});
+test('events are deduplicated, quiz is server graded, chat data stays with each access',async t=>{const {s,token,id}=setup(t);const event={id:randomUUID(),phase:'pre',kind:'phase_open'};s.lessonFlow.event(token,event);s.lessonFlow.event(token,event);assert.equal(s.lessonFlow.report('teacher').students[0].events.length,1);assert.throws(()=>s.lessonFlow.event(token,{...event,id:randomUUID(),kind:'resource_open',resourceId:'unassigned'}),/资料/);const q=s.lessonFlow.view(token).stages[0].questions[0];assert.equal(s.lessonFlow.answer(token,{phase:'pre',questionId:q.id,choice:0}).correct,true);await s.lessonFlow.chat(token,{phase:'pre',question:'如何观察屈曲？',attempt:'先描述方向'},()=>{throw new Error('不应在无依据时调用模型');});assert.equal(s.lessonFlow.report('teacher').students[0].aiQuestions,1);
+  const previous=process.env.PUBLIC_BASE_URL;process.env.PUBLIC_BASE_URL='https://example.com';try{const second=s.lessonFlow.assign('teacher',{planId:id,emails:['different@example.com'],confirm:true});assert.equal(second.count,1);const other=s.db.prepare("SELECT token FROM lesson_access WHERE recipient='different@example.com'").get().token;assert.equal(s.lessonFlow.view(other).stages[0].chats.length,0);}finally{if(previous===undefined)delete process.env.PUBLIC_BASE_URL;else process.env.PUBLIC_BASE_URL=previous;}
+});
+test('without public base mail assignment is blocked; per-phase mail contains individual entry and is not duplicated',async t=>{const {s,id}=setup(t);const previous=process.env.PUBLIC_BASE_URL;delete process.env.PUBLIC_BASE_URL;try{assert.throws(()=>s.lessonFlow.assign('teacher',{planId:id,emails:['one@example.com'],confirm:true}),/公网/);process.env.PUBLIC_BASE_URL='https://example.com';s.lessonFlow.assign('teacher',{planId:id,emails:['one@example.com','two@example.com'],confirm:true});s.lessonFlow.assign('teacher',{planId:id,emails:['one@example.com','two@example.com'],confirm:true});const sent=[];const send=async m=>{sent.push(m);return {accepted:[m.to]};};await s.lessonFlow.run(send,true);assert.equal(sent.length,4);assert.ok(sent.every(m=>m.text.includes('/study.html#token=')&&!m.text.includes('课堂材料应保密')));assert.notEqual(sent.find(m=>m.to==='one@example.com').text.split('token=')[1],sent.find(m=>m.to==='two@example.com').text.split('token=')[1]);await s.lessonFlow.run(send,true);assert.equal(sent.length,4);}finally{if(previous===undefined)delete process.env.PUBLIC_BASE_URL;else process.env.PUBLIC_BASE_URL=previous;}});
+test('HTTP student entry requires token and report requires teacher role',async t=>{const {s,token}=setup(t);const app=createApp({service:s});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>app.server.close(r)));const base=`http://127.0.0.1:${app.server.address().port}`;assert.equal((await fetch(base+'/api/study')).status,401);assert.equal((await fetch(base+'/api/lesson-flow')).status,403);const r=await fetch(base+'/api/study',{headers:{'x-study-token':token}});assert.equal(r.status,200);assert.equal((await r.json()).title,'本次课');assert.equal((await fetch(base+'/study.html')).status,200);});
+test('assigned resource retrieval and file access stay phase-scoped, records survive restart',async()=>{
+  const folder=mkdtempSync(join(tmpdir(),'kin-flow-')),dbPath=join(folder,'flow.sqlite');let s=createService({dbPath});
+  try{
+    const c=s.addChapter('teacher',{title:'资料范围验证',publishNow:true}).chapter;
+    const add=async(title,content)=>{const r=await s.addResource('teacher',{title,chapterId:c.id,audience:'student',sourceType:'course'},title+'.txt','text/plain',Buffer.from(content));s.approveResource('teacher',r.resource.id);return r.resource;};
+    const first=await add('已分配示例','运动观察需要先确定参照节段，再描述运动方向。本段是接口测试资料。');
+    const other=await add('未分配资料','秘密星球的观察结果不能成为当前阶段的回答依据。');
+    const media=await s.addResource('teacher',{title:'演示媒体',chapterId:c.id,audience:'student',sourceType:'course'},'demo.mp4','video/mp4',Buffer.from('synthetic-media'));s.approveResource('teacher',media.resource.id);
+    const plan=s.lessonFlow.save('teacher',{title:'范围检索',chapterId:c.id,stages:{pre:{requirements:'观察运动',resourceIds:[first.id,media.resource.id]},post:{requirements:'以后学习',resourceIds:[other.id],releaseAt:'2099-01-01T00:00:00Z'}}}).id;
+    const token=s.lessonFlow.assign('teacher',{planId:plan,preview:true}).links[0].url.split('token=')[1];
+    assert.equal(s.lessonFlow.file(token,first.id,'pre').filename,'已分配示例.txt');assert.throws(()=>s.lessonFlow.file(token,other.id,'pre'),/未分配/);
+    const r=await s.lessonFlow.chat(token,{phase:'pre',question:'如何确定运动观察的参照节段？'});assert.ok(r.citations.length);assert.ok(r.citations.every(c=>c.documentId===first.documentId));
+    const denied=await s.lessonFlow.chat(token,{phase:'pre',question:'秘密星球的观察结果是什么？'});assert.ok(denied.citations.every(c=>c.documentId!==other.documentId));
+    s.lessonFlow.event(token,{id:randomUUID(),phase:'pre',kind:'video_progress',resourceId:media.resource.id,seconds:10,position:50});s.close();s=createService({dbPath});
+    assert.equal(s.lessonFlow.view(token).stages[0].chats.length,2);assert.equal(s.lessonFlow.report('teacher').students[0].videoSeconds,10);
+  }finally{s.close();assert.equal(dirname(folder),tmpdir());rmSync(folder,{recursive:true,force:true});}
+});
